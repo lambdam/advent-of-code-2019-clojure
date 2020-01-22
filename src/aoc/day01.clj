@@ -15,6 +15,7 @@
 
 (-> (io/resource "day01.txt")
     slurp
+    str/trim
     (str/split #"\s+")
     (->> (map #(Integer/parseInt %)))
     (->> (map part1))
