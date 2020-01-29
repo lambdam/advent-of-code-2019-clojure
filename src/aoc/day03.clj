@@ -15,114 +15,158 @@
 (s/def ::data
   (s/coll-of ::instructions))
 
-(s/def ::tracked-positions
-  (s/schema {:x integer?
-             :y integer?
-             :positions (s/map-of (s/cat :x integer?
-                                         :y integer?)
-                                  integer?)}))
+(s/def ::positions
+  (s/map-of (s/cat :x integer?
+                   :y integer?)
+            integer?))
 
-(def data
-  (-> (io/resource "day03.txt")
-      slurp
-      str/trim
-      str/split-lines
-      (->> (mapv (fn [line]
-                   (let [instructions (str/split line #",")]
-                     (->> instructions
-                          (mapv (fn [instruction]
-                                  [(nth instruction 0)
-                                   (Integer/parseInt (subs instruction 1))])))))))))
+(defn process-line [line]
+  (let [instructions (str/split line #",")]
+    (->> instructions
+         (mapv (fn [instruction]
+                 [(nth instruction 0)
+                  (Integer/parseInt (subs instruction 1))])))))
+
+(def main-data
+  (->> (io/resource "day03.txt")
+       slurp
+       str/trim
+       str/split-lines
+       (mapv process-line)))
+
+(def test-data-1
+  (->> "R75,D30,R83,U83,L12,D49,R71,U7,L72
+        U62,R66,U55,R34,D71,R55,D58,R83"
+       str/split-lines
+       (map str/trim)
+       (map process-line)))
+
+(def test-data-2
+  (->> "R98,U47,R26,D63,R33,U87,L62,D20,R33,U53,R51
+        U98,R91,D20,R16,D67,R40,U7,R15,U6,R7"
+       str/split-lines
+       (map str/trim)
+       (map process-line)))
 
 (comment
-  (s/valid? ::data data)
+  (s/valid? ::data main-data)
   )
 
 (defn instructions->positions
   [instructions]
-  (reduce (fn [{:keys [x y positions] :as acc} [direction steps]]
-            (case direction
-              \L (let [end (- x steps)]
-                   {:x end
-                    :y y
-                    :positions (reduce (fn [acc x']
-                                         (update acc [x' y] #(if (nil? %) 1 (inc %))))
-                                       positions
-                                       (range x end -1))})
-              \U (let [end (+ y steps)]
-                   {:x x
-                    :y end
-                    :positions (reduce (fn [acc y']
-                                         (update acc [x y'] #(if (nil? %) 1 (inc %))))
-                                       positions
-                                       (range y end))})
-              \R (let [end (+ x steps)]
-                   {:x end
-                    :y y
-                    :positions (reduce (fn [acc x']
-                                         (update acc [x' y] #(if (nil? %) 1 (inc %))))
-                                       positions
-                                       (range x end))})
-              \D (let [end (- y steps)]
-                   {:x x
-                    :y end
-                    :positions (reduce (fn [acc y']
-                                         (update acc [x y'] #(if (nil? %) 1 (inc %))))
-                                       positions
-                                       (range y end -1))})
-              ;; else
-              (throw (Exception. "Not a valid direction"))))
-          {:x 0
-           :y 0
-           :positions {}}
-          instructions))
+  (loop [x 0
+         y 0
+         positions {}
+         instructions (apply list instructions)]
+    (if (empty? instructions)
+      positions
+      (let [[direction steps] (peek instructions)
+            tail (pop instructions)]
+        (cond
+          (zero? steps) (recur x y positions tail)
+          :else (let [new-instructions (conj tail [direction (dec steps)])
+                      new-positions (update positions [x y] #(if (nil? %) 1 (inc %)))]
+                  (case direction
+                    \L (recur (dec x) y new-positions new-instructions)
+                    \U (recur x (inc y) new-positions new-instructions)
+                    \R (recur (inc x) y new-positions new-instructions)
+                    \D (recur x (dec y) new-positions new-instructions))))))))
 
 (s/fdef instructions->positions
   :args (s/cat :instructions ::instructions)
-  :ret ::tracked-positions)
+  :ret ::positions)
 
 (st/instrument `instructions->positions)
 
-(def first-wire
-  (-> data
-      first
-      instructions->positions))
+(defn abs [x]
+  (max x (- x)))
+
+(s/fdef abs
+  :args (s/cat :x integer?)
+  :ret integer?)
+
+(defn intersections [data]
+  (-> [(->> data
+            first
+            instructions->positions
+            (map first)
+            set)
+       (->> data
+            second
+            instructions->positions
+            (map first)
+            set)]
+      (->> (apply set/intersection))
+      (disj [0 0])))
+
+(defn min-intersection [data]
+  (->> data
+       intersections
+       (map (fn [[x y]]
+              (+ (abs x) (abs y))))
+       (apply min)))
 
 (comment
-  (s/valid? ::tracked-positions first-wire)
+  (min-intersection test-data-1) ;; test ok
+  (min-intersection test-data-2) ;; test ok
+  ;; part 1
+  (time (min-intersection main-data))
   )
 
-(def second-wire
-  (-> data
-      second
-      instructions->positions))
 
-(def part1
-  (let [abs (fn abs [x]
-              (max x (- x)))
-        first-wire-positions (-> (map first (:positions first-wire))
-                                 set)
-        second-wire-positions (-> (map first (:positions second-wire))
-                                  set)]
-    (as-> (set/intersection
-            first-wire-positions
-            second-wire-positions) <>
-      (disj <> [0 0])
-      (map (fn [[x y]]
-             (+ (abs x) (abs y)))
-           <>)
-      (apply min <>))))
-
-(comment
-  ;; Using transducers to determine the shortest Manhattan path of the crossing
-  ;; sections of a unique wire
-  (->> (:positions first-wire)
+(defn wire-own-intersections [positions]
+  (->> positions
+       ;; Transducer here
        (into []
              (comp (filter (fn [[position value]]
                              (> value 1)))
                    (map (fn [[position _]]
                           position))
                    (map (fn [[x y]]
-                          (+ (abs x) (abs y))))))
-       (apply min))
+                          (+ (abs x) (abs y))))))))
+
+(comment
+  (->> main-data first instructions->positions wire-own-intersections (apply min))
+  )
+
+(defn count-steps [{:keys [target instructions]}]
+  (loop [x 0
+         y 0
+         steps-acc 0
+         instructions (apply list instructions)]
+    (if (empty? instructions)
+      nil
+      (let [[direction steps] (peek instructions)
+            tail (pop instructions)]
+        (cond
+          (zero? steps) (recur x y steps-acc tail)
+          (= [x y] target) steps-acc
+          :else (let [new-instructions (conj tail [direction (dec steps)])
+                      new-steps (inc steps-acc)]
+                  (case direction
+                    \L (recur (dec x) y new-steps new-instructions)
+                    \U (recur x (inc y) new-steps new-instructions)
+                    \R (recur (inc x) y new-steps new-instructions)
+                    \D (recur x (dec y) new-steps new-instructions))))))))
+
+(s/fdef count-steps
+  :args (s/cat :data (s/schema {:target (s/cat :x integer? :y integer?)
+                                :instructions ::instructions}))
+  :ret (s/nilable integer?))
+
+(defn shortest-crossing-path [data]
+  (->> data
+       intersections
+       (map (fn [target]
+              (+ (count-steps {:target target
+                               :instructions (first data)})
+                 (count-steps {:target target
+                               :instructions (second data)}))))
+       (apply min)))
+
+(comment
+  (shortest-crossing-path test-data-1) ;; test ok
+  (shortest-crossing-path test-data-2) ;; test ok
+  ;; part 2
+  (shortest-crossing-path main-data)
   )
