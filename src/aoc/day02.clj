@@ -1,12 +1,21 @@
 (ns aoc.day02
-  (:require [clojure.java.io :as io]
+  (:require [clojure.alpha.spec :as s]
+            [clojure.alpha.spec.test :as st]
+            [clojure.java.io :as io]
             [clojure.string :as str]))
+
+(s/def ::instructions
+  (s/coll-of integer?))
 
 (defn instructions-str->vec [string]
   (-> string
       str/trim
       (str/split #",")
       (->> (mapv #(Integer/parseInt %)))))
+
+(s/fdef instructions-str->vec
+  :args string?
+  :ret ::instructions)
 
 (defn eval-instructions [{:keys [noun verb instructions]}]
   (-> instructions
@@ -28,11 +37,20 @@
                 nil))))
       (get 0)))
 
+(s/fdef eval-instructions
+  :args (s/cat :data (s/schema {:noun integer?
+                                :verb integer?
+                                :instructions ::instructions}))
+  :ret integer?)
+
+(st/instrument `eval-instructions)
+
 (comment ;; part 1
   (eval-instructions
     {:noun 12
      :verb 2
      :instructions (-> "day02.txt" io/resource slurp instructions-str->vec)})
+  (take 3 (-> "day02.txt" io/resource slurp instructions-str->vec))
   )
 
 (defn look-for-result [{:keys [instructions target]}]
@@ -48,6 +66,14 @@
                 {:noun noun
                  :verb verb}
                 (recur noun (inc verb)))))))
+
+(s/fdef look-for-result
+  :args (s/cat :data (s/schema {:instructions ::instructions
+                                :target integer?}))
+  :ret (s/schema {:noun integer?
+                  :verb integer?}))
+
+(st/instrument `look-for-result)
 
 (comment ;; part 2
   (look-for-result
