@@ -1,7 +1,26 @@
 (ns aoc.day03
-  (:require [clojure.java.io :as io]
+  (:require [clojure.alpha.spec :as s]
+            [clojure.alpha.spec.test :as st]
+            [clojure.java.io :as io]
             [clojure.set :as set]
             [clojure.string :as str]))
+
+(s/def ::instruction
+  (s/cat :direction #{\L \U \R \D}
+         :steps integer?))
+
+(s/def ::instructions
+  (s/coll-of ::instruction))
+
+(s/def ::data
+  (s/coll-of ::instructions))
+
+(s/def ::tracked-positions
+  (s/schema {:x integer?
+             :y integer?
+             :positions (s/map-of (s/cat :x integer?
+                                         :y integer?)
+                                  integer?)}))
 
 (def data
   (-> (io/resource "day03.txt")
@@ -15,8 +34,11 @@
                                   [(nth instruction 0)
                                    (Integer/parseInt (subs instruction 1))])))))))))
 
+(comment
+  (s/valid? ::data data)
+  )
+
 (defn instructions->positions
-  "An instruction has the form [direction as char, steps as int]"
   [instructions]
   (reduce (fn [{:keys [x y positions] :as acc} [direction steps]]
             (case direction
@@ -55,14 +77,22 @@
            :positions {}}
           instructions))
 
+(s/fdef instructions->positions
+  :args (s/cat :instructions ::instructions)
+  :ret ::tracked-positions)
+
+(st/instrument `instructions->positions)
+
 (def first-wire
-  "The format is a map of :x :y final positions and a :positions map of {[x y] number-of-passes}"
   (-> data
       first
       instructions->positions))
 
+(comment
+  (s/valid? ::tracked-positions first-wire)
+  )
+
 (def second-wire
-  "The format is a map of :x :y final positions and a :positions map of {[x y] number-of-passes}"
   (-> data
       second
       instructions->positions))

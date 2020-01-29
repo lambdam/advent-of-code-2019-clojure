@@ -1,1 +1,4 @@
-{:paths ["src" "resources"]}
+{:paths ["src" "resources"]
+ :deps {org.clojure/test.check {:mvn/version "0.9.0"}
+        org.clojure/alpha.spec {:git/url "https://github.com/clojure/spec-alpha2.git"
+                                :sha "495e5ac3238be002b4de72d1c48479f6bec06bb3"}}}
